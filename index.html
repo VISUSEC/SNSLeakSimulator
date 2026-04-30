@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SNS情報漏洩シミュレータ(Beta) - VISUSEC</title>
+    <style>
+        body { 
+            margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+            background-color: #e9ecef; display: flex; height: 100vh; overflow: hidden;
+            padding-bottom: 40px; /* フッターの高さ分を確保 */
+            box-sizing: border-box;
+        }
+        
+        /* 左画面：SNS UI */
+        .sns-pane { width: 50%; max-width: 500px; background: #fff; border-right: 1px solid #ddd; display: flex; flex-direction: column; height: 100%; }
+        .sns-header { background: #1da1f2; color: #fff; padding: 15px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
+        .sns-header button { background: rgba(255,255,255,0.2); border: none; color: #fff; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
+        .sns-content { flex: 1; overflow-y: auto; }
+        
+        .profile-header { padding: 20px; border-bottom: 1px solid #eee; background: #f8f9fa; }
+        .profile-avatar { width: 60px; height: 60px; border-radius: 50%; background: #ccc; margin-bottom: 10px; display: flex; align-items: center; justify-content: center; font-size: 24px; }
+        .profile-name { font-size: 1.2em; font-weight: bold; }
+        .profile-handle { color: #657786; margin-bottom: 10px; }
+        .profile-bio { margin-bottom: 10px; line-height: 1.4; }
+        .profile-stats span { margin-right: 15px; font-size: 0.9em; cursor: pointer; }
+        .profile-stats span strong { color: #1da1f2; }
+        
+        .post { padding: 15px; border-bottom: 1px solid #eee; display: flex; gap: 10px; }
+        .post:hover { background: #f8f9fa; }
+        .post-avatar { width: 48px; height: 48px; border-radius: 50%; background: #ccc; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 20px; }
+        .post-content { flex: 1; }
+        .action-label { color: #657786; font-size: 0.85em; margin-bottom: 5px; display: flex; align-items: center; gap: 5px; font-weight: bold; }
+        .post-meta { margin-bottom: 5px; }
+        .author-name { font-weight: bold; cursor: pointer; }
+        .author-handle { color: #657786; font-size: 0.9em; margin-left: 5px; cursor: pointer; }
+        .post-text { line-height: 1.5; word-break: break-word; }
+        .post-image { margin-top: 10px; padding: 20px; background: #e1e8ed; border-radius: 8px; text-align: center; color: #555; border: 1px solid #ccd6dd; font-weight: bold; }
+        .post-date { color: #888; font-size: 0.8em; margin-top: 10px; }
+        .mention { color: #1da1f2; cursor: pointer; text-decoration: none; }
+        
+        .user-list-item { padding: 15px; border-bottom: 1px solid #eee; display: flex; align-items: center; gap: 10px; cursor: pointer; }
+        
+        /* 右画面：システムUI */
+        .reset-pane { flex: 1; display: flex; flex-direction: column; background: #f4f6f9; padding: 20px; overflow-y: auto; }
+        
+        /* イントロダクションパネル */
+        .intro-panel { margin-bottom: 20px; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); border-left: 5px solid #007bff; }
+        .intro-panel h2 { margin: 0 0 10px 0; font-size: 20px; color: #333; }
+        .intro-panel p { margin: 0; color: #555; line-height: 1.5; }
+
+        .control-panel { margin-bottom: 20px; background: #fff; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+        .control-panel select { width: 100%; padding: 10px; font-size: 16px; margin-bottom: 5px; border-radius: 4px; border: 1px solid #ccc; }
+        
+        .reset-card { background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 100%; max-width: 500px; margin: 0 auto; }
+        .reset-card h2 { margin-top: 0; color: #333; border-bottom: 2px solid #dc3545; padding-bottom: 10px; }
+        .form-group { margin-bottom: 20px; }
+        .form-group label { display: block; margin-bottom: 8px; font-weight: bold; color: #555; }
+        .form-group input { width: 100%; padding: 12px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; font-size: 16px; }
+        button.action-btn { width: 100%; padding: 14px; background: #dc3545; color: #fff; border: none; border-radius: 4px; font-size: 16px; font-weight: bold; cursor: pointer; }
+        #feedback { margin-top: 20px; padding: 15px; border-radius: 4px; display: none; line-height: 1.6; }
+        .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+
+        /* フッター */
+        footer {
+            position: fixed; bottom: 0; left: 0; width: 100%;
+            background-color: rgba(0, 0, 0, 0.7); color: #fff;
+            text-align: center; font-size: 12px; padding: 5px 0; z-index: 1000;
+        }
+        footer a { color: #fff; text-decoration: underline; }
+    </style>
+</head>
+<body>
+
+    <div class="sns-pane">
+        <div class="sns-header">
+            <span id="sns-title">Mockitter</span>
+            <button onclick="navigateTo(currentScenario.target)">ターゲットに戻る</button>
+        </div>
+        <div class="sns-content" id="sns-content"></div>
+    </div>
+
+    <div class="reset-pane">
+        <!-- イントロダクション（タイトルと指示） -->
+        <div class="intro-panel">
+            <h2>OSINT パスワード突破演習</h2>
+            <p>左側のSNS画面からターゲットの公開情報（OSINT）を収集し、パスワード再設定画面の「秘密の質問」を突破してください。</p>
+        </div>
+
+        <div class="control-panel">
+            <label style="font-weight: bold; display: block; margin-bottom: 5px;">演習シナリオの選択</label>
+            <select id="scenario-selector" onchange="loadSelectedScenario()"></select>
+        </div>
+        <div class="reset-card" id="reset-card">
+            <h2>パスワード再設定</h2>
+            <div class="form-group"><label>ターゲットID</label><input type="text" id="target-id-display" disabled style="background: #f8f9fa;"></div>
+            <div id="questions-container"></div>
+            <button class="action-btn" onclick="attemptReset()">再設定を実行</button>
+            <div id="feedback"></div>
+        </div>
+    </div>
+
+    <!-- 共通フッター -->
+    <footer>
+        <div>©VISUSEC 2022-2026 <a href="https://visusec.jp/license/" target="_blank">利用規約</a></div>
+        <div>SNS情報漏洩シミュレータ （Beta 1.0 - 20260430）</div>
+    </footer>
+
+    <script>
+        // --- 1. データベース（シナリオ4修正版） ---
+        const db = {
+            users: {
+                // シナリオ1関連
+                "@sato_yuki": { name: "佐藤 ユキ", icon: "⛄", bio: "大学生！毎日楽しい！無言フォロー歓迎", following: ["@friend_a", "@news_bot", "@tokyo_guide"], followers: ["@friend_a"] },
+                "@friend_a": { name: "A子", icon: "👱‍♀️", bio: "ユキのいつメン", following: ["@sato_yuki"], followers: ["@sato_yuki"] },
+                "@tokyo_guide": { name: "東京観光ガイド", icon: "🗼", bio: "東京の最新スポット紹介", following: [], followers: ["@sato_yuki"] },
+                
+                // シナリオ2関連
+                "@kazu_gamer": { name: "カズ", icon: "🎮", bio: "FPSエンジョイ勢。無言フォロー失礼します。", following: ["@sister_ami", "@game_news"], followers: ["@sister_ami"] },
+                "@sister_ami": { name: "あみ", icon: "🎀", bio: "JK2 / カフェ巡り / 兄(@kazu_gamer)はゲーマー", following: ["@kazu_gamer", "@sweet_bot"], followers: ["@kazu_gamer"] },
+                "@game_news": { name: "ゲーム速報", icon: "📰", bio: "最新のゲーム情報をお届けします", following: [], followers: ["@kazu_gamer"] },
+                
+                // シナリオ3関連
+                "@camp_lover_hiro": { name: "ヒロ", icon: "⛺", bio: "週末キャンパー / 焚き火愛好家", following: ["@friend_daiki", "@outdoor_mag", "@car_weekly"], followers: ["@friend_daiki"] },
+                "@friend_daiki": { name: "ダイキ", icon: "🍺", bio: "ヒロの大学のツレ", following: ["@camp_lover_hiro"], followers: ["@camp_lover_hiro"] },
+                "@car_weekly": { name: "週刊クルマ情報", icon: "🚙", bio: "最新の自動車ニュース・特集記事をお届け", following: [], followers: ["@camp_lover_hiro"] },
+                "@outdoor_mag": { name: "月刊アウトドア", icon: "🌲", bio: "自然を楽しむ情報誌", following: [], followers: ["@camp_lover_hiro"] },
+
+                // シナリオ4関連
+                "@mika_cafe": { name: "ミカ", icon: "☕", bio: "カフェ巡りの記録。甘いものは正義。", following: ["@friend_yumi", "@cat_bot"], followers: ["@friend_yumi"] },
+                "@friend_yumi": { name: "ユミ", icon: "💄", bio: "コスメ大好き", following: ["@mika_cafe"], followers: ["@mika_cafe"] },
+                "@cat_bot": { name: "癒やしの猫動画", icon: "🐈", bio: "毎日可愛いねこちゃんを配信", following: [], followers: ["@mika_cafe"] },
+                "@news_bot": { name: "ニュース速報", icon: "📺", bio: "最新のニュースをお届けします", following: [], followers: ["@sato_yuki", "@mika_cafe"] }
+            },
+            posts: [
+                // 【シナリオ1：初級】
+                { id: "p1_1", author: "@sato_yuki", date: "2024/10/10 00:05", text: "ついに20歳になりました！お酒解禁🍻" },
+                { id: "p1_2", author: "@sato_yuki", date: "2024/09/25 18:30", text: "地元の福岡から親が遊びに来てくれた！明太子もらった〜" },
+                { id: "p1_3", author: "@sato_yuki", date: "2024/10/05 19:00", text: "友達の誕生日パーティーで渋谷なう！おめでとう！" },
+                { id: "p1_4", author: "@tokyo_guide", date: "2024/10/08 12:00", text: "東京のおすすめディナー5選！", action: { type: "retweet", by: "@sato_yuki" } },
+                { id: "p1_5", author: "@sato_yuki", date: "2024/10/12 13:00", text: "今日のランチ美味しかった！" },
+                { id: "p1_6", author: "@friend_a", date: "2024/10/11 08:30", text: "今日から後期の授業はじまる〜だるい😩" },
+                { id: "p1_7", author: "@friend_a", date: "2024/10/09 15:00", text: "スタバの新作のフラペチーノ飲んだ！🍠めちゃうま！" },
+                { id: "p1_8", author: "@friend_a", date: "2024/09/26 12:00", text: "@sato_yuki 昨日貸したノート、明日絶対持ってきてねー！忘れたら許さん😤" },
+
+                // 【シナリオ2：中級】
+                { id: "p2_1", author: "@kazu_gamer", date: "2024/10/20 22:15", text: "昨日のランクマッチ、味方強くて助かったわ" },
+                { id: "p2_2", author: "@kazu_gamer", date: "2024/09/15 15:00", text: "友達の家のポチ、可愛すぎ🐶" },
+                { id: "p2_3", author: "@sister_ami", date: "2024/08/15 12:00", text: "お母さんの実家からお米が大量に届いた！助かるー🍚", image: "📷 【画像】段ボール箱の写真。側面に『高橋農園』という文字と、送り状の差出人欄に『高橋』という苗字が確認できる。" },
+                { id: "p2_4", author: "@sister_ami", date: "2024/05/10 15:30", text: "うちの愛犬の『マロン』、もう10歳かぁ。長生きしてね" },
+                { id: "p2_5", author: "@game_news", date: "2024/10/22 10:00", text: "【速報】新マップ追加アップデート配信開始！", action: { type: "like", by: "@kazu_gamer" } },
+                { id: "p2_6", author: "@sister_ami", date: "2024/10/12 18:00", text: "鈴木先生の課題終わらんー😭" },
+
+                // 【シナリオ3：上級】
+                { id: "p3_1", author: "@car_weekly", date: "2024/10/12 08:00", text: "【特集】キャンプにも最適！積載量抜群の『N-BOX』の魅力を徹底解剖！" },
+                { id: "p3_2", author: "@camp_lover_hiro", date: "2024/10/12 09:00", text: "@car_weekly これ！初めて買った車で、今も大事に乗ってます⛺ キャンプ道具もめっちゃ積めるし最高！" },
+                { id: "p3_3", author: "@car_weekly", date: "2024/10/05 10:00", text: "【新車情報】新型ジムニー、予約殺到で納車待ち1年！？" },
+                { id: "p3_4", author: "@camp_lover_hiro", date: "2024/10/05 11:30", text: "@car_weekly いつか絶対乗りたい憧れの車✨" },
+                { id: "p3_5", author: "@camp_lover_hiro", date: "2024/10/10 20:00", text: "昨日の焼き肉、最高だった！やっぱり肉だな🥩" },
+                { id: "p3_6", author: "@friend_daiki", date: "2024/10/01 12:30", text: "@camp_lover_hiro 相変わらずオムライスばっかり食ってんな笑" },
+                { id: "p3_7", author: "@camp_lover_hiro", date: "2024/10/01 12:35", text: "@friend_daiki これだけは一生飽きないわ！" },
+                { id: "p3_8", author: "@outdoor_mag", date: "2024/10/15 10:00", text: "秋のキャンプ特集！おすすめのギア紹介", action: { type: "retweet", by: "@camp_lover_hiro" } },
+
+                // 【シナリオ4：専門級（OSINT画像解析）】
+                { id: "p4_1", author: "@mika_cafe", date: "2024/10/25 15:00", text: "お母さんの地元に帰省中！昔からあるこのお店、テラス席からの眺めが最高✨", image: "📷 【画像】オシャレなケーキ。窓ガラスの外に「浜松市〇〇町」と書かれた青い電柱の看板がかすかに映り込んでいる" }, // 正解（母親の出身地）
+                { id: "p4_2", author: "@mika_cafe", date: "2024/10/20 19:00", text: "静岡駅の近くのカフェ開拓したいな〜。誰かおすすめ教えて！" }, // ミスリード
+                { id: "p4_3", author: "@friend_yumi", date: "2024/10/05 21:00", text: "来月の「桜木小」のタイムカプセル掘り起こすイベント、今からめっちゃ楽しみ！当時の自分、何入れてたかな〜🤔" }, 
+                { id: "p4_4", author: "@mika_cafe", date: "2024/10/05 21:05", text: "@friend_yumi 私も行くよー！当日よろしくね✨ ほんと懐かしい〜！！" , action: { type: "like", by: "@friend_yumi" } },
+                { id: "p4_5", author: "@cat_bot", date: "2024/10/26 12:00", text: "ダンボールにすっぽり収まる子猫🐾", action: { type: "like", by: "@mika_cafe" } },
+                { id: "p4_6", author: "@news_bot", date: "2024/10/26 08:00", text: "本日の天気は全国的に晴れるでしょう☀️", action: { type: "retweet", by: "@mika_cafe" } }
+            ],
+            scenarios: [
+                {
+                    id: "s1", title: "無防備なプロフィールと投稿", target: "@sato_yuki",
+                    questions: [
+                        { id: "q1", label: "生年月日は？ (例: 2004/01/01)", answer: "2004/10/10" },
+                        { id: "q2", label: "出身の都道府県は？", answer: "福岡" }
+                    ]
+                },
+                {
+                    id: "s2", title: "フォロワー（家族）からの漏洩", target: "@kazu_gamer",
+                    questions: [
+                        { id: "q1", label: "母親の旧姓は？", answer: "高橋" },
+                        { id: "q2", label: "初めて飼ったペットの名前は？", answer: "マロン" }
+                    ]
+                },
+                {
+                    id: "s3", title: "横断的な調査（リプライと文脈）", target: "@camp_lover_hiro",
+                    questions: [
+                        { id: "q1", label: "好きな食べ物は？", answer: "オムライス" },
+                        { id: "q2", label: "初めて買った車の車種は？ (英数字ハイフン)", answer: "N-BOX" }
+                    ]
+                },
+                {
+                    id: "s4", title: "画像解析と自然な秘密の質問", target: "@mika_cafe",
+                    questions: [
+                        { id: "q1", label: "出身の小学校は？", answer: "桜木" },
+                        { id: "q2", label: "母親の出身地（市区町村）は？", answer: "浜松市" }
+                    ]
+                }
+            ]
+        };
+
+        let currentScenario = null;
+
+        window.onload = () => {
+            const selector = document.getElementById('scenario-selector');
+            db.scenarios.forEach(s => {
+                const option = document.createElement('option');
+                option.value = s.id; option.textContent = s.title;
+                selector.appendChild(option);
+            });
+            loadSelectedScenario();
+        };
+
+        function loadSelectedScenario() {
+            const scenarioId = document.getElementById('scenario-selector').value;
+            currentScenario = db.scenarios.find(s => s.id === scenarioId);
+            document.getElementById('target-id-display').value = currentScenario.target;
+            document.getElementById('feedback').style.display = 'none';
+
+            const container = document.getElementById('questions-container');
+            container.innerHTML = '';
+            currentScenario.questions.forEach((q, idx) => {
+                container.innerHTML += `
+                    <div class="form-group">
+                        <label>質問${idx + 1}: ${q.label}</label>
+                        <input type="text" id="${q.id}" placeholder="回答を入力">
+                    </div>
+                `;
+            });
+            navigateTo(currentScenario.target);
+        }
+
+        function linkify(text) { return text.replace(/(@\w+)/g, '<a href="#" class="mention" onclick="navigateTo(\'$1\'); return false;">$1</a>'); }
+
+        // --- SNS UI 描画ロジック ---
+        function navigateTo(userId) {
+            const user = db.users[userId];
+            if (!user) return;
+
+            const content = document.getElementById('sns-content');
+            let html = `
+                <div class="profile-header">
+                    <div class="profile-avatar">${user.icon || '👤'}</div>
+                    <div class="profile-name">${user.name}</div>
+                    <div class="profile-handle">${userId}</div>
+                    <div class="profile-bio">${linkify(user.bio)}</div>
+                    <div class="profile-stats">
+                        <span onclick="renderUserList('${userId}', 'following')"><strong>${user.following.length}</strong> フォロー</span>
+                        <span onclick="renderUserList('${userId}', 'followers')"><strong>${user.followers.length}</strong> フォロワー</span>
+                    </div>
+                </div>
+            `;
+
+            let relatedPosts = db.posts.filter(p => 
+                p.author === userId || 
+                p.text.includes(userId) || 
+                (p.action && p.action.by === userId)
+            );
+
+            // 日時（降順：新しいものが上）でソート
+            relatedPosts.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+            relatedPosts.forEach(post => {
+                const author = db.users[post.author];
+                let actionHtml = '';
+                
+                if (post.action && post.action.by === userId) {
+                    const actionUser = db.users[userId].name;
+                    if (post.action.type === 'retweet') actionHtml = `<div class="action-label">🔁 ${actionUser}さんがリポスト</div>`;
+                    if (post.action.type === 'like') actionHtml = `<div class="action-label">❤️ ${actionUser}さんがいいね</div>`;
+                }
+
+                let imageHtml = post.image ? `<div class="post-image">${post.image}</div>` : '';
+                html += `
+                    <div class="post">
+                        <div class="post-avatar" onclick="navigateTo('${post.author}')">${author.icon || '👤'}</div>
+                        <div class="post-content">
+                            ${actionHtml}
+                            <div class="post-meta">
+                                <span class="author-name" onclick="navigateTo('${post.author}')">${author.name}</span>
+                                <span class="author-handle" onclick="navigateTo('${post.author}')">${post.author}</span>
+                            </div>
+                            <div class="post-text">${linkify(post.text)}</div>
+                            ${imageHtml}
+                            <div class="post-date">${post.date}</div>
+                        </div>
+                    </div>
+                `;
+            });
+            content.innerHTML = html;
+        }
+
+        function renderUserList(userId, type) {
+            const user = db.users[userId];
+            const list = user[type];
+            const title = type === 'following' ? 'フォロー中' : 'フォロワー';
+            let html = `<div style="padding: 15px; font-weight: bold; border-bottom: 1px solid #eee; background: #f8f9fa;">
+                <a href="#" onclick="navigateTo('${userId}'); return false;" style="text-decoration: none; margin-right: 10px;">← 戻る</a>${user.name} の ${title}
+            </div>`;
+            list.forEach(id => {
+                const u = db.users[id];
+                if(u) {
+                    html += `
+                        <div class="user-list-item" onclick="navigateTo('${id}')">
+                            <div class="post-avatar" style="width:40px; height:40px; font-size:16px;">${u.icon || '👤'}</div>
+                            <div>
+                                <div class="author-name">${u.name}</div><div class="author-handle">${id}</div>
+                                <div style="font-size: 0.9em; color: #555; margin-top: 5px;">${linkify(u.bio)}</div>
+                            </div>
+                        </div>`;
+                }
+            });
+            document.getElementById('sns-content').innerHTML = html;
+        }
+
+        function attemptReset() {
+            let isAllCorrect = true;
+            currentScenario.questions.forEach(q => {
+                const userInput = document.getElementById(q.id).value.trim();
+                if (userInput !== q.answer) isAllCorrect = false;
+            });
+            const feedback = document.getElementById('feedback');
+            feedback.style.display = 'block';
+            if (isAllCorrect) {
+                feedback.className = 'success';
+                feedback.innerHTML = `<strong>【ハッキング成功】</strong><br>解説：文字として書いていなくても、画像に映り込んだ「電柱の住所表示」や「車のエンブレム」、他人の何気ない会話から、個人情報は容易に特定されてしまいます。`;
+            } else {
+                feedback.className = 'error';
+                feedback.innerHTML = `<strong>【認証失敗】</strong><br>回答が間違っています。関係のない情報（ミスリード）に騙されていませんか？画像の中など、隅々まで観察してみましょう。`;
+            }
+        }
+    </script>
+</body>
+</html>
