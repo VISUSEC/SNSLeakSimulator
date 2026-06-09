@@ -60,5 +60,3 @@ OSI（Open Source Initiative）が定義するオープンソースライセン�
 
 Copyright (c) 2022–2026 VISUSEC  
 All Rights Reserved.
-Copyright (c) 2022–2025 VISUSEC  
-All Rights Reserved.
